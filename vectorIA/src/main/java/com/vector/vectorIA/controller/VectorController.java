@@ -5,6 +5,7 @@ import com.vector.vectorIA.service.AnalisisIAProvider;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +30,6 @@ public class VectorController {
                 request.nombreCurso(), request.nombreAlumno(), request.nota(), request.observaciones()
         );
 
-        // Metadatos para filtrado técnico (SQL puro bajo cuerda)
         Map<String, Object> metadata = Map.of(
                 "student_id", request.idAlumno(),
                 "curso_id", request.cursoId(),
@@ -42,7 +42,7 @@ public class VectorController {
     }
 
     @GetMapping("/consultar")
-    public String realizarConsultaSemantica(@RequestParam String pregunta) {
+    public Flux<String> realizarConsultaSemantica(@RequestParam String pregunta) {
         return analisisIAProvider.analizarRendimiento(pregunta);
     }
 }

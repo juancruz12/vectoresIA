@@ -6,7 +6,9 @@ import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
@@ -23,18 +25,42 @@ public class AnalisisIAProvider {
         this.chatModel = chatModel;
     }
 
-    public String analizarRendimiento(String consultaUsuario) {
-        // 1. Búsqueda (Se mantiene igual)
-        List<Document> documentosRelevantes = vectorStore.similaritySearch(
-                SearchRequest.builder().query(consultaUsuario).topK(10).build()
-        );
+    public Flux<String> analizarRendimiento(String consultaUsuario) {
+
+        List<String> cursosExistentes = List.of("Matematicas Avanzadas", "Programación en Java");
+
+        String promptExtraccion = String.format("""
+        Analiza la pregunta del usuario y los cursos disponibles: %s
+        
+        REGLA:
+        - Si pregunta por un curso específico, responde SOLO el nombre exacto del curso.
+        - Si pregunta por 'todos' o 'en general', responde 'GLOBAL'.
+        - Si no detectas nada, responde 'NONE'.
+        
+        PREGUNTA: %s
+        """, cursosExistentes, consultaUsuario);
+
+        String decision = chatModel.call(promptExtraccion).trim();
+
+        var requestBuilder = SearchRequest.builder()
+                .query(consultaUsuario);
+
+        if (!decision.equalsIgnoreCase("GLOBAL") && !decision.equalsIgnoreCase("NONE")) {
+            var filterBuilder = new FilterExpressionBuilder();
+            requestBuilder.filterExpression(filterBuilder.eq("curso_nombre", decision).build());
+            requestBuilder.topK(50)
+            .similarityThreshold(0.5); // Si es un curso, traemos bastantes registros del mismo
+        } else {
+            requestBuilder.topK(100)
+            .similarityThreshold(0.0);
+        }
+
+        List<Document> documentosRelevantes = vectorStore.similaritySearch(requestBuilder.build());
 
         String contexto = documentosRelevantes.stream()
                 .map(Document::getFormattedContent)
                 .collect(Collectors.joining("\n---\n"));
 
-        // 2. Prompt Template MEJORADO
-        // Añadimos la variable {pregunta} explícitamente en el cuerpo
         String mensajeSistema = """
             Eres un Asistente de Análisis Académico experto. 
             Tu objetivo es analizar las evaluaciones proporcionadas y responder a la consulta del usuario de forma directa y analítica.
@@ -55,12 +81,15 @@ public class AnalisisIAProvider {
 
         PromptTemplate promptTemplate = new PromptTemplate(mensajeSistema);
 
-        // IMPORTANTE: Asegúrate de pasar tanto el contexto como la pregunta al mapa
         Prompt prompt = promptTemplate.create(Map.of(
                 "contexto", contexto,
                 "pregunta", consultaUsuario
         ));
 
-        return chatModel.call(prompt).getResult().getOutput().getText();
+        return chatModel.stream(prompt)
+                .map(response -> {
+                    String content = response.getResult().getOutput().getText();
+                    return content != null ? content : "";
+                });
     }
 }
