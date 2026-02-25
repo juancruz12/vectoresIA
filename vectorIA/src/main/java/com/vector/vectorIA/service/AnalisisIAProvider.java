@@ -49,7 +49,7 @@ public class AnalisisIAProvider {
             var filterBuilder = new FilterExpressionBuilder();
             requestBuilder.filterExpression(filterBuilder.eq("curso_nombre", decision).build());
             requestBuilder.topK(50)
-            .similarityThreshold(0.5); // Si es un curso, traemos bastantes registros del mismo
+            .similarityThreshold(0.5);
         } else {
             requestBuilder.topK(100)
             .similarityThreshold(0.0);
