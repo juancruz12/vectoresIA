@@ -1,0 +1,72 @@
+pipeline {
+    agent any
+
+    parameters{
+        string(name:'APELLIDO', description:'Ingese su apellido')
+        text(name: 'BIOGRAFIA', description:'Ingrese biografia')
+        booleanParam(name:'ES_MUJER', description: 'Ingrese si es mujer')
+        choice(name:'CIUDADES', choices:['Quilmes', 'Moron', 'Microcentro'], description: 'Ingrese ciudad')
+        password(name:'PASSWORD', description:'Ingrese contraseña')
+    }
+
+    environment {
+        API_INSTITUTO="http://localhost:8099"
+    }
+
+    stages {
+        stage("Paso 1"){
+            steps {
+                echo "ejecutando paso 1"
+            }
+        }
+        stage("Paso 2: Clear Workspace"){
+            steps{
+                script {
+                    sh "rm -rf ./*"
+                }
+            }
+        }
+        stage("Paso 3: Git Clone"){
+            steps{
+                withCredentials([usernamePassword(credentialsId:"github_credentials", usernameVariable:"GITHUB_USER", passwordVariable:"GITHUB_PASSWORD")]){
+                    script{
+                        sh "git clone https://$GITHUB_USER:$GITHUB_PASSWORD@github.com/juancruz12/vectoresIA"
+                        sh "cd vectoresIA"
+                        sh "ls"
+                    }
+
+                }
+            }
+        }
+        stage("Imprimir variable de entorno"){
+            steps{
+                echo "$API_INSTITUTO"
+
+                sh "echo 'hola-mundo' "
+            }
+        }
+        stage("Cambio de valor"){
+            steps{
+                script{
+                    API_INSTITUTO = "SARASA:8088"
+                }
+                echo "$API_INSTITUTO"
+            }
+        }
+        stage("Imprimir parametro"){
+            steps{
+                echo "${APELLIDO}"
+            }
+        }
+        stage("Imprimir Credenciales"){
+            steps{
+                withCredentials([usernamePassword(credentialsId:"github_credentials", usernameVariable:"CUSTOM_USER", passwordVariable:"CUSTOM_PASSWORD")]){
+                    script{
+                        echo "el nombre de usuario es: $CUSTOM_USER y la password es: $CUSTOM_PASSWORD"
+                    }
+
+                }
+            }
+        }
+    }
+}
