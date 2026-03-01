@@ -1,26 +1,26 @@
 services:
   pgvector:
-    container_name: vectorIA_db
+    container_name: vectorKavak_db
     image: pgvector/pgvector:pg17
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: vectordb
+      POSTGRES_DB: vectorKavakdb
       PGDATA: /var/lib/postgresql/data/pgdata
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d vectordb" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d vectorKavakdb" ]
       interval: 5s
       timeout: 5s
       retries: 5
     volumes:
         - pgdata:/var/lib/postgresql/data
     networks:
-        - vectorIA-network
-  vectorIAApp:
-    container_name: vectorIA_app_container
-    image: juancruz12/vectoria-app:1.0
+        - kavak-network
+  vectorIAKavakApp:
+    container_name: vectorIAKavak_app_container
+    image: juancruz12/vectoriakavak-app:1.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -28,15 +28,16 @@ services:
       - "8083:8083"
     environment:
       JWT_SECRET_KEY: McvbIKwPaVjhmKBwFUdHDXzfWeAZgaJ8XJr6cBsvNkPI9VUwAWW7GzFMV6ZhHsI
-      DATABASE_URL: jdbc:postgresql://pgvector:5432/vectordb
+      DATABASE_URL: jdbc:postgresql://pgvector:5432/vectorKavakdb
     depends_on:
       pgvector:
         condition: service_healthy
     networks:
-      - vectorIA-network
+      - kavak-network
 
 networks:
-  vectorIA-network:
+  kavak-network:
+    external: true
 
 volumes:
   pgdata:

@@ -25,64 +25,84 @@ public class AnalisisIAProvider {
         this.chatModel = chatModel;
     }
 
+    /**
+     * Analiza mantenimientos de vehículos usando búsqueda semántica y IA.
+     *
+     * @param consultaUsuario Pregunta del usuario sobre mantenimientos
+     * @return Stream de respuestas procesadas por la IA
+     */
     public Flux<String> analizarRendimiento(String consultaUsuario) {
 
-        List<String> cursosExistentes = List.of("Matematicas Avanzadas", "Programación en Java");
-
-        String promptExtraccion = String.format("""
-        Analiza la pregunta del usuario y los cursos disponibles: %s
+        // Paso 1: Identificar si la consulta es GLOBAL o busca un tipo específico de mantenimiento
+        String promptExtraccion = """
+        Analiza esta pregunta sobre mantenimientos de vehículos. Identifica si:
+        - Pregunta por un tipo específico (ej: "cambio de aceite", "rotación de llantas", "revisión de frenos")
+        - Pregunta por un vehículo específico (ej: "Honda", "Toyota", "patente ABC123")
+        - Pregunta general sobre todos los mantenimientos
         
-        REGLA:
-        - Si pregunta por un curso específico, responde SOLO el nombre exacto del curso.
-        - Si pregunta por 'todos' o 'en general', responde 'GLOBAL'.
-        - Si no detectas nada, responde 'NONE'.
+        RESPONDE EN FORMATO:
+        TIPO_MANTENIMIENTO: [el tipo específico o GENERAL]
+        VEHICULO: [marca/modelo/patente o GLOBAL]
         
-        PREGUNTA: %s
-        """, cursosExistentes, consultaUsuario);
+        PREGUNTA: """ + consultaUsuario;
 
         String decision = chatModel.call(promptExtraccion).trim();
 
+        // Paso 2: Construir búsqueda semántica con filtros inteligentes
         var requestBuilder = SearchRequest.builder()
-                .query(consultaUsuario);
+                .query(consultaUsuario)
+                .topK(100)  // Obtener más documentos para análisis exhaustivo
+                .similarityThreshold(0.2);  // Umbral más bajo para capturar contexto relacionado
 
-        if (!decision.equalsIgnoreCase("GLOBAL") && !decision.equalsIgnoreCase("NONE")) {
-            var filterBuilder = new FilterExpressionBuilder();
-            requestBuilder.filterExpression(filterBuilder.eq("curso_nombre", decision).build());
-            requestBuilder.topK(50)
-            .similarityThreshold(0.5);
-        } else {
-            requestBuilder.topK(100)
-            .similarityThreshold(0.0);
-        }
+        // Aplicar filtros basados en la decisión (opcional - por ahora busca todo)
+        // Si se necesita filtrado específico, se puede implementar con metadata de los documentos
+        // Por ahora, la búsqueda semántica es suficiente para encontrar documentos relevantes
 
+        // Paso 3: Obtener documentos relevantes
         List<Document> documentosRelevantes = vectorStore.similaritySearch(requestBuilder.build());
 
-        String contexto = documentosRelevantes.stream()
+        // Paso 4: Enriquecer contexto con análisis preliminar
+        String contextoRaw = documentosRelevantes.stream()
                 .map(Document::getFormattedContent)
                 .collect(Collectors.joining("\n---\n"));
 
+        String contextoEnriquecido = enriquecerContexto(contextoRaw, documentosRelevantes);
+
+        // Paso 5: Crear prompt avanzado para análisis de mantenimientos
         String mensajeSistema = """
-            Eres un Asistente de Análisis Académico experto. 
-            Tu objetivo es analizar las evaluaciones proporcionadas y responder a la consulta del usuario de forma directa y analítica.
+            Eres un ANALISTA EXPERTO EN MANTENIMIENTO DE FLOTA VEHICULAR para KAVAK.
+            Tu objetivo es proporcionar análisis detallados, precisos y accionables sobre los mantenimientos de la flota.
             
-            REGLAS CRÍTICAS:
-            1. Si el usuario pregunta "quién necesita ayuda", identifica a los alumnos con notas bajas (menores a 6) o comentarios negativos.
-            2. No digas "no has planteado una duda", utiliza la PREGUNTA DEL USUARIO para filtrar el CONTEXTO.
-            3. Si no hay datos sobre el curso mencionado, indícalo.
+            ╔════════════════════════════════════════════════════════════════╗
+            ║ INSTRUCCIONES CRÍTICAS:                                       ║
+            ║ 1. Analiza TODOS los datos disponibles en el contexto        ║
+            ║ 2. Identifica patrones, tendencias y anomalías               ║
+            ║ 3. Compara costos estimados vs. costos finales              ║
+            ║ 4. Proporciona recomendaciones accionables                   ║
+            ║ 5. Si no hay suficientes datos, indícalo claramente         ║
+            ╚════════════════════════════════════════════════════════════════╝
             
-            CONTEXTO DE EVALUACIONES:
+            INFORMACIÓN DE CONTEXTO:
             {contexto}
+            
+            TIPOS DE ANÁLISIS ESPERADOS:
+            • Frecuencia y distribución de mantenimientos
+            • Análisis de costos (variaciones, promedios, outliers)
+            • Salud general de la flota por tipo de vehículo
+            • Identificación de problemas recurrentes
+            • Comparativas entre vehículos
+            • Predicciones de mantenimiento próximo
             
             PREGUNTA DEL USUARIO:
             {pregunta}
             
-            RESPUESTA ANALÍTICA:
+            RESPUESTA DETALLADA Y ANALÍTICA:
             """;
 
         PromptTemplate promptTemplate = new PromptTemplate(mensajeSistema);
 
         Prompt prompt = promptTemplate.create(Map.of(
-                "contexto", contexto,
+                "contexto", contextoEnriquecido.isEmpty() ? "No hay datos de mantenimiento disponibles" : contextoEnriquecido,
                 "pregunta", consultaUsuario
         ));
 
@@ -91,5 +111,49 @@ public class AnalisisIAProvider {
                     String content = response.getResult().getOutput().getText();
                     return content != null ? content : "";
                 });
+    }
+
+
+    /**
+     * Enriquece el contexto con análisis estadístico preliminar
+     */
+    private String enriquecerContexto(String contextoRaw, List<Document> documentos) {
+        if (documentos.isEmpty()) {
+            return "SIN DATOS DISPONIBLES";
+        }
+
+        // Calcular estadísticas básicas
+        int totalMantenimientos = documentos.size();
+
+        double costoPromedio = documentos.stream()
+                .mapToDouble(doc -> extraerCosto(doc.getFormattedContent()))
+                .filter(c -> c > 0)
+                .average()
+                .orElse(0.0);
+
+        StringBuilder enriquecido = new StringBuilder();
+        enriquecido.append("═══ RESUMEN ANALÍTICO ═══\n");
+        enriquecido.append(String.format("Total de registros: %d\n", totalMantenimientos));
+        enriquecido.append(String.format("Costo promedio estimado: $%.2f\n", costoPromedio));
+        enriquecido.append("\n═══ DATOS DETALLADOS ═══\n");
+        enriquecido.append(contextoRaw);
+
+        return enriquecido.toString();
+    }
+
+    /**
+     * Extrae el costo estimado de un documento de mantenimiento
+     */
+    private double extraerCosto(String contenido) {
+        try {
+            int inicio = contenido.indexOf("Costo Estimado:");
+            if (inicio == -1) return 0.0;
+
+            String substring = contenido.substring(inicio + 15);
+            String[] partes = substring.split("[^0-9.]");
+            return Double.parseDouble(partes[1]);
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 }

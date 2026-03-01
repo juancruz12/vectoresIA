@@ -1,6 +1,8 @@
 package com.vector.vectorIA.controller;
 
 import com.vector.vectorIA.dto.EvaluacionRequest;
+import com.vector.vectorIA.dto.MantenimientoDTO;
+import com.vector.vectorIA.dto.VehiculoDTO;
 import com.vector.vectorIA.service.AnalisisIAProvider;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -39,6 +41,41 @@ public class VectorController {
 
         Document doc = new Document(content, metadata);
         vectorStore.add(List.of(doc));
+    }
+
+    @PostMapping("/insertMantenimiento")
+    public void ingestDataMantenimiento(@RequestBody VehiculoDTO request) {
+        // Insertar TODOS los mantenimientos del vehículo, no solo el primero
+        List<Document> documentos = request.mantenimientos().stream()
+                .map(mantenimientoDTO -> {
+                    String content = String.format(
+                            "Mantenimiento del vehiculo %s. Patente: %s. Año: %d. Kilometraje: %d. Tipo de Mantenimiento: %s. Descripcion: %s. Costo Estimado: %.2f. Costo Final: %.2f. Estado: %s",
+                            request.marca() + " " + request.modelo(),
+                            request.patente(),
+                            request.anio(),
+                            request.kilometraje(),
+                            mantenimientoDTO.tipoMantenimiento(),
+                            mantenimientoDTO.descripcion(),
+                            mantenimientoDTO.costoEstimado(),
+                            mantenimientoDTO.costoFinal(),
+                            mantenimientoDTO.estado()
+                    );
+
+                    Map<String, Object> metadata = Map.of(
+                            "tipo_mantenimiento", mantenimientoDTO.tipoMantenimiento(),
+                            "vehiculo_auto", request.marca() + " " + request.modelo(),
+                            "patente", request.patente(),
+                            "anio", request.anio(),
+                            "kilometraje", request.kilometraje().toString(),
+                            "costo_estimado", mantenimientoDTO.costoEstimado().toString(),
+                            "costo_final", mantenimientoDTO.costoFinal().toString()
+                    );
+
+                    return new Document(content, metadata);
+                })
+                .toList();
+
+        vectorStore.add(documentos);
     }
 
     @GetMapping("/consultar")
